@@ -36,14 +36,14 @@ def burnout_risk(row):
 
 df["BurnoutRisk"] = df.apply(burnout_risk, axis=1)
 
-# Travel Mapping
+# Travel Mapping (FIXED values)
 travel_map = {
     "Non-Travel": 0,
-    "Travel_Rarely": 1,
+    "Travel Rarely": 1,
     "Travel Frequently": 2
 }
 
-df["TravelScore"] = df["BusinessTravel"].map(travel_map)
+df["TravelScore"] = df["BusinessTravel"].map(travel_map).fillna(0)
 
 # Stress Indicator
 df["StressIndicator"] = (
@@ -60,6 +60,7 @@ overtime_filter = st.sidebar.selectbox("Overtime", ["All", "Yes", "No"])
 tenure = st.sidebar.slider("Years at Company", 0, 40, (0, 40))
 eng_threshold = st.sidebar.slider("Engagement Threshold", 1.0, 4.0, 2.5)
 
+# ---------------- FILTERING ----------------
 filtered_df = df[
     (df["Department"] == dept) &
     (df["JobRole"] == role) &
@@ -69,6 +70,12 @@ filtered_df = df[
 if overtime_filter != "All":
     filtered_df = filtered_df[filtered_df["OverTime"] == overtime_filter]
 
+# ---------------- EMPTY DATA HANDLING ----------------
+if filtered_df.empty:
+    st.title("Employee Engagement, Satisfaction, and Burnout Analysis")
+    st.error("🚫 No matching records found for selected filters")
+    st.markdown("👉 Try changing Department, Job Role, or Overtime filters")
+    st.stop()
 
 # ---------------- TITLE ----------------
 st.title("Employee Engagement, Satisfaction, and Burnout Analysis")
@@ -97,7 +104,6 @@ col3.metric("Work-Life Balance", round(wlb_avg, 2))
 col4.metric("Stability Score", round(stability_score, 2))
 col5.metric("Stress Indicator", round(stress_indicator, 2))
 
-
 # ---------------- INSIGHTS ----------------
 st.subheader("📊 Insights")
 
@@ -113,14 +119,12 @@ if wlb_avg < 2.5:
 if stress_indicator > 1:
     st.warning("⚠️ Workload stress is high across employees")
 
-
 # ---------------- BURNOUT DASHBOARD ----------------
 st.subheader("🔥 Burnout Risk Distribution")
 
 fig = plt.figure()
 filtered_df["BurnoutRisk"].value_counts().plot(kind="bar")
 st.pyplot(fig)
-
 
 # ---------------- CAREER STAGE ANALYSIS ----------------
 st.subheader("📊 Career Stage Analysis")
@@ -134,7 +138,6 @@ fig = plt.figure()
 filtered_df.groupby("YearsInCurrentRole")["Engagement"].mean().plot()
 plt.title("Engagement vs Years in Current Role")
 st.pyplot(fig)
-
 
 # ---------------- SLIDES ----------------
 st.subheader("📈 Dashboard Slides")
@@ -195,7 +198,6 @@ elif st.session_state.slide == 6:
     fig = plt.figure()
     filtered_df.groupby("JobLevel")["Engagement"].mean().plot(kind="bar")
     st.pyplot(fig)
-
 
 # ---------------- MANAGER ACTION PANEL ----------------
 st.subheader("🚨 Manager Action Panel")
