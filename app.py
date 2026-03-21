@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
-import os
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Employee Engagement Dashboard", layout="wide")
@@ -44,16 +42,19 @@ if overtime_filter != "All":
 # ---------------- TITLE ----------------
 st.title("Employee Engagement, Satisfaction, and Burnout Analysis")
 
+# ---------------- EMPTY DATA CHECK ----------------
+if filtered_df.empty:
+    st.error("⚠️ No data available for selected filters. Please change filters.")
+    st.stop()
+
 # ---------------- KPI CALCULATIONS ----------------
 engagement_avg = filtered_df["Engagement"].mean()
 burnout_rate = filtered_df["BurnoutFlag"].mean()
 wlb_avg = filtered_df["WorkLifeBalance"].mean()
 
-stability_score = filtered_df[[
-    "JobSatisfaction",
-    "EnvironmentSatisfaction",
-    "RelationshipSatisfaction"
-]].std(axis=1).mean()
+stability_score = filtered_df[
+    ["JobSatisfaction", "EnvironmentSatisfaction", "RelationshipSatisfaction"]
+].std(axis=1).mean()
 
 stress_indicator = (
     (filtered_df["OverTime"] == "Yes").mean() +
@@ -73,13 +74,13 @@ col5.metric("Stress Indicator", round(stress_indicator, 2))
 st.subheader("📊 Insights")
 
 if burnout_rate > 0.3:
-    st.error("High burnout risk detected in this segment")
+    st.error("High burnout risk detected")
 
 if engagement_avg < 2.5:
-    st.warning("Low engagement levels observed")
+    st.warning("Low engagement detected")
 
 if wlb_avg < 2:
-    st.warning("Poor work-life balance across employees")
+    st.warning("Poor work-life balance")
 
 # ---------------- SLIDES ----------------
 st.subheader("📈 Dashboard Slides")
@@ -103,42 +104,36 @@ st.write(f"### Slide {st.session_state.slide} / 6")
 
 # -------- SLIDES --------
 
-# 1 Satisfaction
 if st.session_state.slide == 1:
     st.title("Job Satisfaction Distribution")
     fig = plt.figure()
     filtered_df["JobSatisfaction"].value_counts().sort_index().plot(kind="bar")
     st.pyplot(fig)
 
-# 2 Attrition
 elif st.session_state.slide == 2:
     st.title("Attrition Distribution")
     fig = plt.figure()
     filtered_df["Attrition"].value_counts().plot(kind="pie", autopct="%1.1f%%")
     st.pyplot(fig)
 
-# 3 Engagement vs Years
 elif st.session_state.slide == 3:
     st.title("Engagement vs Years")
     fig = plt.figure()
     plt.scatter(filtered_df["YearsAtCompany"], filtered_df["Engagement"])
     st.pyplot(fig)
 
-# 4 Overtime Impact
 elif st.session_state.slide == 4:
     st.title("Overtime vs Engagement")
     fig = plt.figure()
     filtered_df.groupby("OverTime")["Engagement"].mean().plot(kind="bar")
     st.pyplot(fig)
 
-# 5 Attrition vs Engagement
 elif st.session_state.slide == 5:
     st.title("Attrition vs Engagement")
     fig = plt.figure()
     filtered_df.groupby("Attrition")["Engagement"].mean().plot(kind="bar")
     st.pyplot(fig)
 
-# 6 Job Level Analysis
 elif st.session_state.slide == 6:
     st.title("Engagement by Job Level")
     fig = plt.figure()
@@ -153,5 +148,7 @@ burnout_df = filtered_df[
     (filtered_df["WorkLifeBalance"] <= 2)
 ]
 
-st.write(burnout_df.head())
-
+if burnout_df.empty:
+    st.info("No high burnout employees in this segment")
+else:
+    st.write(burnout_df.head())
