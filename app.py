@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Employee Engagement Dashboard", layout="wide")
 
@@ -13,8 +12,6 @@ def load_data():
 df = load_data()
 
 # ---------------- DATA PREP ----------------
-
-# Engagement Index
 df["Engagement"] = (
     df["JobSatisfaction"]
     + df["EnvironmentSatisfaction"]
@@ -22,10 +19,6 @@ df["Engagement"] = (
     + df["RelationshipSatisfaction"]
 ) / 4
 
-# Normalized Engagement
-df["Engagement_Normalized"] = (df["Engagement"] - 1) / 3
-
-# Burnout Risk Levels
 def burnout_risk(row):
     if row["OverTime"] == "Yes" and row["WorkLifeBalance"] <= 2:
         return "High"
@@ -36,177 +29,110 @@ def burnout_risk(row):
 
 df["BurnoutRisk"] = df.apply(burnout_risk, axis=1)
 
-# Travel Mapping (FIXED values)
 travel_map = {
     "Non-Travel": 0,
     "Travel Rarely": 1,
     "Travel Frequently": 2
 }
 
-df["TravelScore"] = df["BusinessTravel"].map(travel_map).fillna(0)
-
-# Stress Indicator
 df["StressIndicator"] = (
-    (df["OverTime"] == "Yes").astype(int) + df["TravelScore"]
+    (df["OverTime"] == "Yes").astype(int) +
+    df["BusinessTravel"].map(travel_map).fillna(0)
 ) / 3
 
 
-# ---------------- SIDEBAR FILTERS ----------------
+# ---------------- SIDEBAR ----------------
 st.sidebar.title("Filters")
 
 dept = st.sidebar.selectbox("Department", df["Department"].unique())
-role = st.sidebar.selectbox("Job Role", df["JobRole"].unique())
-overtime_filter = st.sidebar.selectbox("Overtime", ["All", "Yes", "No"])
+
+roles = df[df["Department"] == dept]["JobRole"].unique()
+role = st.sidebar.selectbox("Job Role", roles)
+
+overtime = st.sidebar.selectbox("Overtime", ["All", "Yes", "No"])
+
 tenure = st.sidebar.slider("Years at Company", 0, 40, (0, 40))
 eng_threshold = st.sidebar.slider("Engagement Threshold", 1.0, 4.0, 2.5)
 
-# ---------------- FILTERING ----------------
+
+# ---------------- FILTER ----------------
 filtered_df = df[
     (df["Department"] == dept) &
     (df["JobRole"] == role) &
     (df["YearsAtCompany"].between(tenure[0], tenure[1]))
 ]
 
-if overtime_filter != "All":
-    filtered_df = filtered_df[filtered_df["OverTime"] == overtime_filter]
+if overtime != "All":
+    filtered_df = filtered_df[filtered_df["OverTime"] == overtime]
 
-# ---------------- EMPTY DATA HANDLING ----------------
+# fallback
 if filtered_df.empty:
-    st.title("Employee Engagement, Satisfaction, and Burnout Analysis")
-    st.error("🚫 No matching records found for selected filters")
-    st.markdown("👉 Try changing Department, Job Role, or Overtime filters")
-    st.stop()
+    st.warning("⚠️ No exact match, showing department data")
+    filtered_df = df[df["Department"] == dept]
+
 
 # ---------------- TITLE ----------------
 st.title("Employee Engagement, Satisfaction, and Burnout Analysis")
+st.caption(f"{dept} → {role}")
 
-# ---------------- KPI CALCULATIONS ----------------
-engagement_avg = filtered_df["Engagement"].mean()
-burnout_dist = filtered_df["BurnoutRisk"].value_counts(normalize=True)
-wlb_avg = filtered_df["WorkLifeBalance"].mean()
 
-stability_score = 1 - filtered_df[[
+# ---------------- KPIs ----------------
+eng = filtered_df["Engagement"].mean()
+burn = (filtered_df["BurnoutRisk"] == "High").mean() * 100
+wlb = filtered_df["WorkLifeBalance"].mean()
+
+stability = 1 - filtered_df[[
     "JobSatisfaction",
     "EnvironmentSatisfaction",
     "RelationshipSatisfaction"
 ]].std(axis=1).mean()
 
-stress_indicator = filtered_df["StressIndicator"].mean()
+stress = filtered_df["StressIndicator"].mean()
 
-# ---------------- KPI DISPLAY ----------------
-col1, col2, col3, col4, col5 = st.columns(5)
+c1, c2, c3, c4, c5 = st.columns(5)
 
-eng_label = "High" if engagement_avg > 3 else "Medium" if engagement_avg > 2.5 else "Low"
+c1.metric("Engagement", round(eng,2))
+c2.metric("High Burnout %", f"{round(burn,1)}%")
+c3.metric("Work-Life Balance", round(wlb,2))
+c4.metric("Stability", round(stability,2))
+c5.metric("Stress", round(stress,2))
 
-col1.metric("Engagement Index", f"{round(engagement_avg,2)} ({eng_label})")
-col2.metric("High Burnout %", f"{round(burnout_dist.get('High',0)*100,1)}%")
-col3.metric("Work-Life Balance", round(wlb_avg, 2))
-col4.metric("Stability Score", round(stability_score, 2))
-col5.metric("Stress Indicator", round(stress_indicator, 2))
 
 # ---------------- INSIGHTS ----------------
 st.subheader("📊 Insights")
 
-if burnout_dist.get("High",0) > 0.25:
-    st.error("🚨 Significant high burnout segment detected")
+if burn > 25:
+    st.error("High burnout detected")
 
-if engagement_avg < 2.5:
-    st.warning("⚠️ Engagement levels are critically low")
+if eng < 2.5:
+    st.warning("Low engagement")
 
-if wlb_avg < 2.5:
-    st.warning("⚠️ Work-life balance needs improvement")
+if wlb < 2.5:
+    st.warning("Poor work-life balance")
 
-if stress_indicator > 1:
-    st.warning("⚠️ Workload stress is high across employees")
 
-# ---------------- BURNOUT DASHBOARD ----------------
-st.subheader("🔥 Burnout Risk Distribution")
+# ---------------- CHARTS ----------------
+st.subheader("🔥 Burnout Distribution")
+st.bar_chart(filtered_df["BurnoutRisk"].value_counts())
 
-fig = plt.figure()
-filtered_df["BurnoutRisk"].value_counts().plot(kind="bar")
-st.pyplot(fig)
+st.subheader("📈 Engagement vs Years")
+st.line_chart(filtered_df.groupby("YearsAtCompany")["Engagement"].mean())
 
-# ---------------- CAREER STAGE ANALYSIS ----------------
-st.subheader("📊 Career Stage Analysis")
+st.subheader("📊 Overtime Impact")
+st.bar_chart(filtered_df.groupby("OverTime")["Engagement"].mean())
 
-fig = plt.figure()
-filtered_df.groupby("YearsAtCompany")["Engagement"].mean().plot()
-plt.title("Engagement vs Years at Company")
-st.pyplot(fig)
+st.subheader("📊 Job Level Engagement")
+st.bar_chart(filtered_df.groupby("JobLevel")["Engagement"].mean())
 
-fig = plt.figure()
-filtered_df.groupby("YearsInCurrentRole")["Engagement"].mean().plot()
-plt.title("Engagement vs Years in Current Role")
-st.pyplot(fig)
 
-# ---------------- SLIDES ----------------
-st.subheader("📈 Dashboard Slides")
-
-if "slide" not in st.session_state:
-    st.session_state.slide = 1
-
-c1, c2, c3 = st.columns([1,2,1])
-
-with c1:
-    if st.button("⬅ Previous"):
-        if st.session_state.slide > 1:
-            st.session_state.slide -= 1
-
-with c3:
-    if st.button("Next ➡"):
-        if st.session_state.slide < 6:
-            st.session_state.slide += 1
-
-st.write(f"### Slide {st.session_state.slide} / 6")
-
-# -------- SLIDES --------
-
-if st.session_state.slide == 1:
-    st.title("Job Satisfaction Distribution")
-    fig = plt.figure()
-    filtered_df["JobSatisfaction"].value_counts().sort_index().plot(kind="bar")
-    st.pyplot(fig)
-
-elif st.session_state.slide == 2:
-    st.title("Attrition Distribution")
-    fig = plt.figure()
-    filtered_df["Attrition"].value_counts().plot(kind="pie", autopct="%1.1f%%")
-    st.pyplot(fig)
-
-elif st.session_state.slide == 3:
-    st.title("Engagement vs Years")
-    fig = plt.figure()
-    plt.scatter(filtered_df["YearsAtCompany"], filtered_df["Engagement"])
-    plt.xlabel("Years at Company")
-    plt.ylabel("Engagement")
-    st.pyplot(fig)
-
-elif st.session_state.slide == 4:
-    st.title("Overtime vs Engagement")
-    fig = plt.figure()
-    filtered_df.groupby("OverTime")["Engagement"].mean().plot(kind="bar")
-    st.pyplot(fig)
-
-elif st.session_state.slide == 5:
-    st.title("Attrition vs Engagement")
-    fig = plt.figure()
-    filtered_df.groupby("Attrition")["Engagement"].mean().plot(kind="bar")
-    st.pyplot(fig)
-
-elif st.session_state.slide == 6:
-    st.title("Engagement by Job Level")
-    fig = plt.figure()
-    filtered_df.groupby("JobLevel")["Engagement"].mean().plot(kind="bar")
-    st.pyplot(fig)
-
-# ---------------- MANAGER ACTION PANEL ----------------
+# ---------------- MANAGER PANEL ----------------
 st.subheader("🚨 Manager Action Panel")
 
-low_eng = filtered_df[filtered_df["Engagement"] < eng_threshold]
-high_burn = filtered_df[filtered_df["BurnoutRisk"] == "High"]
+low = filtered_df[filtered_df["Engagement"] < eng_threshold]
+high = filtered_df[filtered_df["BurnoutRisk"] == "High"]
 
-st.write("🔻 Low Engagement Employees")
-st.dataframe(low_eng.head(10))
+st.write("Low Engagement")
+st.dataframe(low.head())
 
-st.write("🔥 High Burnout Risk Employees")
-st.dataframe(high_burn.head(10))
+st.write("High Burnout")
+st.dataframe(high.head())
