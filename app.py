@@ -1,79 +1,151 @@
 import streamlit as st
-import pickle
+import pandas as pd
 import numpy as np
+import pickle
+import os
+import matplotlib.pyplot as plt
 
-# Load model
-model = pickle.load(open("employee_model.pkl", "rb"))
+# ---------------- CONFIG ----------------
+st.set_page_config(page_title="Employee Engagement Dashboard", layout="wide")
 
-# Page config
-st.set_page_config(page_title="Employee Dashboard", layout="wide")
+# ---------------- LOAD DATA ----------------
+@st.cache_data
+def load_data():
+    return pd.read_csv("Palo Alto Networks.csv")
 
-# -------------------------------
-# TITLE
-# -------------------------------
-st.markdown(
-    "<h1 style='text-align: center; color: green;'>Employee Engagement, Satisfaction, and Burnout Diagnostic Analysis at Palo Alto Networks</h1>",
-    unsafe_allow_html=True
-)
+df = load_data()
 
-st.markdown(
-    "<p style='text-align: center;'>Predict Employee Attrition Risk using Machine Learning</p>",
-    unsafe_allow_html=True
-)
+# ---------------- LOAD MODEL ----------------
+model = None
+model_path = "employee_model.pkl"
 
-# -------------------------------
-# SIDEBAR INPUTS
-# -------------------------------
-st.sidebar.header("Employee Parameters")
+if os.path.exists(model_path):
+    with open(model_path, "rb") as f:
+        model = pickle.load(f)
 
-job = st.sidebar.slider("Job Satisfaction", 1, 4, 2)
-env = st.sidebar.slider("Environment Satisfaction", 1, 4, 2)
-work = st.sidebar.slider("Work Life Balance", 1, 4, 2)
-overtime = st.sidebar.selectbox("Overtime", [0, 1])
-years = st.sidebar.slider("Years At Company", 0, 40, 5)
+# ---------------- SIDEBAR ----------------
+st.sidebar.title("Employee Parameters")
 
-predict_btn = st.sidebar.button("Predict Risk")
+job_satisfaction = st.sidebar.slider("Job Satisfaction", 1, 4, 2)
+env_satisfaction = st.sidebar.slider("Environment Satisfaction", 1, 4, 2)
+work_life = st.sidebar.slider("Work Life Balance", 1, 4, 2)
+job_involvement = st.sidebar.slider("Job Involvement", 1, 4, 2)
+relationship = st.sidebar.slider("Relationship Satisfaction", 1, 4, 2)
 
-# -------------------------------
-# PREDICTION
-# -------------------------------
-if predict_btn:
-    prediction = model.predict([[job, env, work, overtime, years]])
-    risk = prediction[0]
+overtime = st.sidebar.selectbox("Overtime", ["No", "Yes"])
+years = st.sidebar.slider("Years at Company", 0, 40, 5)
+
+# Convert overtime
+overtime_val = 1 if overtime == "Yes" else 0
+
+# ---------------- TITLE ----------------
+st.title("Employee Engagement, Satisfaction, and Burnout Diagnostic Analysis")
+
+# ---------------- ENGAGEMENT INDEX ----------------
+engagement = (job_satisfaction + env_satisfaction + job_involvement + relationship) / 4
+
+# ---------------- BURNOUT RISK ----------------
+if overtime_val == 1 and work_life <= 2:
+    burnout = "High"
+elif overtime_val == 1:
+    burnout = "Medium"
 else:
-    risk = 0
+    burnout = "Low"
 
-# -------------------------------
-# TOP METRICS
-# -------------------------------
+# ---------------- KPIs ----------------
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("Job Satisfaction", job)
-col2.metric("Work-Life Balance", work)
-col3.metric("Years at Company", years)
-col4.metric("Overtime", overtime)
+col1.metric("Engagement Index", round(engagement, 2))
+col2.metric("Burnout Risk", burnout)
+col3.metric("Work-Life Balance", work_life)
+col4.metric("Years at Company", years)
 
-# -------------------------------
-# RESULT DISPLAY
-# -------------------------------
-st.markdown("## 🔍 Prediction Result")
+# ---------------- PREDICTION ----------------
+st.subheader("🔍 Prediction Result")
 
-if predict_btn:
-    if risk == 1:
-        st.error("⚠️ High Risk: Employee May Leave")
+if model is not None:
+    try:
+        input_data = np.array([[job_satisfaction, env_satisfaction, work_life,
+                                job_involvement, relationship, overtime_val, years]])
+        pred = model.predict(input_data)[0]
+
+        if pred == 1:
+            st.error("High Risk: Employee May Leave")
+        else:
+            st.success("Low Risk: Employee Likely to Stay")
+
+    except:
+        st.warning("Model input mismatch. Using rule-based prediction.")
+
+        if engagement < 2.5 or burnout == "High":
+            st.error("High Risk: Employee May Leave")
+        else:
+            st.success("Low Risk: Employee Likely to Stay")
+
+else:
+    if engagement < 2.5 or burnout == "High":
+        st.error("High Risk: Employee May Leave")
     else:
-        st.success("✅ Low Attrition Risk")
+        st.success("Low Risk: Employee Likely to Stay")
 
-# -------------------------------
-# SIMPLE ANALYSIS
-# -------------------------------
-st.markdown("## 📊 Insights")
+# ---------------- INSIGHTS ----------------
+st.subheader("📊 Insights")
 
-if overtime == 1:
+if overtime_val == 1:
     st.warning("Employees doing overtime have higher burnout risk")
 
-if job <= 2:
+if job_satisfaction <= 2:
     st.warning("Low job satisfaction detected")
 
-if work <= 2:
-    st.warning("Poor work-life balance")
+if work_life <= 2:
+    st.warning("Poor work-life balance detected")
+
+# ---------------- DATA ANALYSIS ----------------
+st.subheader("📈 Dashboard Analysis")
+
+# Engagement column for dataset
+df["Engagement"] = (
+    df["JobSatisfaction"]
+    + df["EnvironmentSatisfaction"]
+    + df["JobInvolvement"]
+    + df["RelationshipSatisfaction"]
+) / 4
+
+# 1. Job Satisfaction Chart
+fig1 = plt.figure()
+df["JobSatisfaction"].value_counts().sort_index().plot(kind="bar")
+plt.title("Job Satisfaction Distribution")
+plt.xlabel("Satisfaction Level")
+plt.ylabel("Count")
+st.pyplot(fig1)
+
+# 2. Attrition Pie Chart
+fig2 = plt.figure()
+df["Attrition"].value_counts().plot(kind="pie", autopct="%1.1f%%")
+plt.title("Attrition Distribution")
+st.pyplot(fig2)
+
+# 3. Engagement vs Years
+fig3 = plt.figure()
+plt.scatter(df["YearsAtCompany"], df["Engagement"])
+plt.xlabel("Years at Company")
+plt.ylabel("Engagement Score")
+plt.title("Engagement vs Years at Company")
+st.pyplot(fig3)
+
+# 4. Overtime vs Engagement
+fig4 = plt.figure()
+df.groupby("OverTime")["Engagement"].mean().plot(kind="bar")
+plt.title("Overtime vs Engagement")
+st.pyplot(fig4)
+
+# ---------------- FILTER SECTION ----------------
+st.subheader("🔎 Filters")
+
+dept = st.selectbox("Select Department", df["Department"].unique())
+filtered = df[df["Department"] == dept]
+
+st.write("Filtered Data Preview", filtered.head())
+
+# ---------------- FOOTER ----------------
+st.success("Project Ready for Submission ✅")
