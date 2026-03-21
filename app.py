@@ -72,7 +72,7 @@ if filtered_df.empty:
 
 
 # ---------------- TITLE ----------------
-st.title("Employee Engagement, Satisfaction, and Burnout Analysis")
+st.title("Employee Engagement, Satisfaction, and Burnout Diagnostic Analysis at Palo Alto Networks")
 st.caption(f"{dept} → {role}")
 
 
